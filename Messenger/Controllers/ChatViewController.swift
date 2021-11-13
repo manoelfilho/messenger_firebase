@@ -158,20 +158,24 @@ extension ChatViewController: InputBarAccessoryViewDelegate {
                     print("Failed to send")
                 }
             })
+            
         } else {
+            
             guard
                 let conversationId = conversationId,
                 let name = self.title else {
                 return
             }
+            
             //adiciona para uma conversa existente
-            DatabaseManager.shared.sendMessage(to: conversationId, name: name, newMessage: message) { success in
+            DatabaseManager.shared.sendMessage(to: conversationId, otherUserEmail: otherUserEmail, name: name, newMessage: message) { success in
                 if success {
                     
                 }else {
                     print("erro ...")
                 }
             }
+            
         }
     }
     
