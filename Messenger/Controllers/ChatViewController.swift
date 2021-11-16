@@ -1,6 +1,7 @@
 import UIKit
 import MessageKit
 import InputBarAccessoryView
+import SDWebImage
 
 struct Message: MessageType {
     public var sender: SenderType
@@ -45,6 +46,13 @@ struct Sender: SenderType {
     public var photoURL: String
     public var senderId: String
     public var displayName: String
+}
+
+struct Media: MediaItem{
+    var url: URL?
+    var image: UIImage?
+    var placeholderImage: UIImage
+    var size: CGSize
 }
 
 class ChatViewController: MessagesViewController {
@@ -118,6 +126,79 @@ class ChatViewController: MessagesViewController {
         messagesCollectionView.messagesLayoutDelegate = self
         messagesCollectionView.messagesDisplayDelegate = self
         messageInputBar.delegate = self
+        messagesCollectionView.messageCellDelegate = self
+        setupInputButton()
+        
+    }
+    
+    private func setupInputButton(){
+        let button = InputBarButtonItem()
+        button.setSize(CGSize(width: 35, height: 35), animated: false)
+        let imageIconButton = UIImage(systemName: "photo")
+        button.setImage(imageIconButton, for: .normal)
+        button.onTouchUpInside { _ in
+            self.presentInputActionSheet()
+        }
+        messageInputBar.setLeftStackViewWidthConstant(to: 36, animated: false)
+        messageInputBar.setStackViewItems([button], forStack: .left, animated: false)
+    }
+    
+    private func presentInputActionSheet(){
+        
+        let actionSheet = UIAlertController(
+            title: "Adicionar arquivo",
+            message: "O que deseja encaminhar",
+            preferredStyle: .actionSheet
+        )
+        
+        actionSheet.addAction(UIAlertAction(title: "Imagem", style: .default, handler: { [weak self] _ in
+            self?.presentPhotoInputActionSheet()
+        }))
+        
+        actionSheet.addAction(UIAlertAction(title: "Vídeo", style: .default, handler: { _ in
+            
+        }))
+        
+        actionSheet.addAction(UIAlertAction(title: "Áudio", style: .default, handler: { _ in
+            
+        }))
+        
+        actionSheet.addAction(UIAlertAction(title: "Cancelar", style: .cancel, handler: nil))
+        
+        present(actionSheet, animated: true)
+    }
+    
+    private func presentPhotoInputActionSheet(){
+        
+        
+        let actionSheet = UIAlertController(
+            title: "Imagem",
+            message: "Selecione sua imagem",
+            preferredStyle: .actionSheet
+        )
+        
+        actionSheet.addAction(UIAlertAction(title: "Câmera", style: .default, handler: { [weak self] _ in
+            let picker = UIImagePickerController()
+            picker.sourceType = .camera
+            picker.delegate = self
+            picker.allowsEditing = true
+            self?.present(picker, animated: true)
+        }))
+        
+        actionSheet.addAction(UIAlertAction(title: "Galeria", style: .default, handler: { [weak self] _ in
+            
+            let picker = UIImagePickerController()
+            picker.sourceType = .photoLibrary
+            picker.delegate = self
+            picker.allowsEditing = true
+            self?.present(picker, animated: true)
+            
+        }))
+        
+        actionSheet.addAction(UIAlertAction(title: "Cancelar", style: .cancel, handler: nil))
+        
+        present(actionSheet, animated: true)
+        
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -131,6 +212,75 @@ class ChatViewController: MessagesViewController {
 
 }
 
+//MARK: ImagePicker
+extension ChatViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true, completion: nil)
+    }
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        
+        picker.dismiss(animated: true, completion: nil)
+        
+        guard
+            let image = info[UIImagePickerController.InfoKey.editedImage] as? UIImage,
+            let imageDate = image.pngData(),
+            let messageId =  createMessageId(),
+            let conversationId = conversationId,
+            let name = self.title,
+            let selfSender = selfSender else {
+            return
+        }
+        
+        let fileName = "photo_message_\(messageId)".replacingOccurrences(of: " ", with: "-")+".png"
+        
+        //Upload the image
+        StorageManager.shared.uploadMessagePhoto(with: imageDate, fileName: fileName) { [weak self] result in
+            
+            guard let strongSelf = self else {
+                return
+            }
+            
+            switch result {
+                case .success(let urlString):
+                    //Send the message
+                    print(urlString)
+                
+                    guard
+                        let url = URL(string: urlString),
+                        let placeholder = UIImage(systemName: "plus") else {
+                            return
+                        }
+                
+                    let media = Media(url: url, image: nil, placeholderImage: placeholder, size: .zero)
+                
+                    let message = Message(sender: selfSender,
+                                          messageId: messageId,
+                                          sentDate: Date(),
+                                          kind: .photo(media)
+                    )
+                
+                    DatabaseManager.shared.sendMessage(to: conversationId, otherUserEmail: strongSelf.otherUserEmail, name: name, newMessage: message) { success in
+                        
+                        if success {
+                            print("sent message photo")
+                        }else{
+                            print("Error sendinf photo")
+                        }
+                        
+                    }
+                case .failure(let error):
+                    print("Error: \(error)")
+            }
+        }
+        
+        
+    }
+    
+}
+
+//MARK: Input bar
 extension ChatViewController: InputBarAccessoryViewDelegate {
     
     func inputBar(_ inputBar: InputBarAccessoryView, didPressSendButtonWith text: String) {
@@ -193,6 +343,7 @@ extension ChatViewController: InputBarAccessoryViewDelegate {
     
 }
 
+//MARK: Message Kit
 extension ChatViewController: MessagesDataSource, MessagesLayoutDelegate, MessagesDisplayDelegate{
     
     func currentSender() -> SenderType {
@@ -209,4 +360,46 @@ extension ChatViewController: MessagesDataSource, MessagesLayoutDelegate, Messag
     func numberOfSections(in messagesCollectionView: MessagesCollectionView) -> Int {
         return self.messages.count
     }
+    
+    func configureMediaMessageImageView(_ imageView: UIImageView, for message: MessageType, at indexPath: IndexPath, in messagesCollectionView: MessagesCollectionView) {
+        guard let message = message as? Message else {
+            return
+        }
+        switch message.kind {
+            case .photo(let media):
+                guard let imageUrl = media.url else {
+                    return
+                }
+            imageView.sd_setImage(with: imageUrl, completed: nil)
+            default:
+                break
+        }
+    }
+    
+}
+
+extension ChatViewController: MessageCellDelegate {
+    
+    func didTapMessage(in cell: MessageCollectionViewCell) {}
+    
+    func didTapImage(in cell: MessageCollectionViewCell) {
+        
+        guard let indexPath = messagesCollectionView.indexPath(for: cell) else {
+            return
+        }
+        
+        let message = messages[indexPath.section]
+        
+        switch message.kind {
+            case .photo(let media):
+                guard let imageUrl = media.url else {
+                    return
+                }
+                let vc = PhotoViewViewController(with: imageUrl)
+                self.navigationController?.pushViewController(vc, animated: true)
+            default:
+                break
+        }
+    }
+    
 }
