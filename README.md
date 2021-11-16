@@ -10,6 +10,7 @@ Exemplo de app de mensagens feito com Swift 5, UIKit e a biblioteca do Firebase
 - Localização de usuários por nome
 - Cadastro de usuários com foto de perfil
 - Layout customizado
+- Envio de imagens
 
 ## Novas funções
 
@@ -17,7 +18,6 @@ Em fase de desenvolvimento
 
 - Envio de localização
 - Envio de áudio
-- Envio de imagens e arquivos
 
 ## Instalação
 
